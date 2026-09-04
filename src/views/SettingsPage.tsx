@@ -224,7 +224,7 @@ export function SettingsPage({ store }: Props) {
   return (
     <div className="max-w-2xl mx-auto px-5 md:px-8 py-8 md:py-12">
       <h1 className="font-serif text-3xl md:text-4xl font-medium tracking-tight mb-2">Settings</h1>
-      <p className="text-ink-400 mb-8">Manage your data and preferences. Everything is stored locally on your device.</p>
+      <p className="text-ink-400 mb-8">Manage your data and preferences. Everything is saved to your account.</p>
 
       <Section icon={Database} title="Data management">
         <div className="space-y-3">
@@ -274,7 +274,8 @@ export function SettingsPage({ store }: Props) {
       <Section icon={Info} title="About English Garden">
         <p className="text-sm text-ink-500 dark:text-ink-400 leading-relaxed">
           English Garden helps you build long-term English vocabulary through images, context, stories,
-          and active recall — no translation needed. Everything is stored on your device and works fully offline.
+          and active recall — no translation needed. Your words sync to your account, and folders can be
+          shared with other people or published for everyone.
         </p>
         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
           <div className="p-3 rounded-xl bg-ink-50 dark:bg-ink-800/50">
@@ -293,7 +294,7 @@ export function SettingsPage({ store }: Props) {
       </Section>
 
       <p className="text-center text-xs text-ink-400 mt-8">
-        English Garden · Fully offline · Your data never leaves your device
+        English Garden · Synced to your account
       </p>
     </div>
   );
@@ -307,7 +308,8 @@ const SHORTCUTS = [
   { action: 'Active Recall', keys: '5' },
   { action: 'Statistics', keys: '6' },
   { action: 'Folders', keys: '7' },
-  { action: 'Settings', keys: '8' },
+  { action: 'Discover', keys: '8' },
+  { action: 'Settings', keys: '9' },
   { action: 'Quick search', keys: 'Cmd+K' },
   { action: 'Close / cancel', keys: 'Esc' },
 ];

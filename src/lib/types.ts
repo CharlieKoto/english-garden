@@ -1,11 +1,16 @@
 export type WordStatus = 'dont_know' | 'learning' | 'know';
 export type ReviewRating = 'easy' | 'good' | 'hard' | 'forgot';
 
+/** A folder is either owner-only (plus explicit shares) or listed on Discover. */
+export type FolderVisibility = 'private' | 'public';
+
 export interface Category {
   id: string;
   name: string;
+  description: string | null;
   color: string;
   icon: string | null;
+  visibility: FolderVisibility;
   created_at: string;
 }
 
@@ -48,6 +53,30 @@ export interface ReviewDay {
   learned_count: number;
 }
 
+/** A folder belonging to someone else that the current user is allowed to read. */
+export interface SharedFolder {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  icon: string | null;
+  owner_id: string;
+  owner_username: string;
+  word_count: number;
+  /** Present on Discover results. */
+  created_at?: string;
+  /** Present on folders shared directly with me. */
+  shared_at?: string;
+  visibility?: FolderVisibility;
+}
+
+/** One recipient of a folder the current user owns. */
+export interface FolderShare {
+  user_id: string;
+  username: string;
+  created_at: string;
+}
+
 export type View =
   | { name: 'home' }
   | { name: 'words' }
@@ -57,6 +86,8 @@ export type View =
   | { name: 'recall'; mode?: RecallMode }
   | { name: 'stats' }
   | { name: 'categories' }
+  | { name: 'discover' }
+  | { name: 'folder'; id: string }
   | { name: 'settings' };
 
 export type RecallMode =

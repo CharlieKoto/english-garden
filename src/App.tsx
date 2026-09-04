@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '@/lib/useTheme';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 import type { View } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
-  Home, BookOpen, Plus, Repeat, Brain, BarChart3, FolderTree, Settings,
-  Sun, Moon, Sprout, Search, Command,
+  Home, BookOpen, Plus, Repeat, Brain, BarChart3, FolderTree, Compass, Settings,
+  Sun, Moon, Sprout, Search, Command, LogOut, Loader2, AlertCircle, X,
 } from 'lucide-react';
 import { HomePage } from '@/views/HomePage';
 import { WordsPage } from '@/views/WordsPage';
@@ -15,7 +16,10 @@ import { ReviewPage } from '@/views/ReviewPage';
 import { RecallPage } from '@/views/RecallPage';
 import { StatsPage } from '@/views/StatsPage';
 import { CategoriesPage } from '@/views/CategoriesPage';
+import { DiscoverPage } from '@/views/DiscoverPage';
+import { SharedFolderPage } from '@/views/SharedFolderPage';
 import { SettingsPage } from '@/views/SettingsPage';
+import { AuthPage, ClaimUsernamePage } from '@/views/AuthPage';
 import type { Store } from '@/lib/store';
 
 const NAV: { icon: typeof Home; label: string; view: View; shortcut: string }[] = [
@@ -26,11 +30,29 @@ const NAV: { icon: typeof Home; label: string; view: View; shortcut: string }[] 
   { icon: Brain, label: 'Recall', view: { name: 'recall' }, shortcut: '5' },
   { icon: BarChart3, label: 'Stats', view: { name: 'stats' }, shortcut: '6' },
   { icon: FolderTree, label: 'Folders', view: { name: 'categories' }, shortcut: '7' },
-  { icon: Settings, label: 'Settings', view: { name: 'settings' }, shortcut: '8' },
+  { icon: Compass, label: 'Discover', view: { name: 'discover' }, shortcut: '8' },
+  { icon: Settings, label: 'Settings', view: { name: 'settings' }, shortcut: '9' },
 ];
 
+/** Decides between the auth screens and the app itself. */
 function App() {
+  const { loading, session, needsUsername } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-sage-500" />
+      </div>
+    );
+  }
+  if (!session) return <AuthPage />;
+  if (needsUsername) return <ClaimUsernamePage />;
+  return <Garden />;
+}
+
+function Garden() {
   const { theme, toggle } = useTheme();
+  const { username, signOut } = useAuth();
   const store = useStore();
   const [view, setView] = useState<View>({ name: 'home' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -49,7 +71,7 @@ function App() {
         if (e.key === 'Escape') (target as HTMLElement).blur();
         return;
       }
-      if (e.key >= '1' && e.key <= '8' && !e.metaKey && !e.ctrlKey) {
+      if (e.key >= '1' && e.key <= '9' && !e.metaKey && !e.ctrlKey) {
         const item = NAV[parseInt(e.key) - 1];
         if (item) navigate(item.view);
       }
@@ -64,6 +86,58 @@ function App() {
 
   const isActive = (v: View) => view.name === v.name;
 
+  const navList = (
+    <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
+      {NAV.map((item) => {
+        const Icon = item.icon;
+        const active = isActive(item.view);
+        return (
+          <button
+            key={item.label}
+            onClick={() => navigate(item.view)}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
+              active
+                ? 'bg-sage-100 text-sage-700 dark:bg-sage-800/40 dark:text-sage-200'
+                : 'text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800'
+            )}
+          >
+            <Icon size={18} />
+            <span className="flex-1 text-left">{item.label}</span>
+            <kbd className={cn('text-[10px] font-mono opacity-50', active && 'opacity-70')}>
+              {item.shortcut}
+            </kbd>
+          </button>
+        );
+      })}
+    </nav>
+  );
+
+  const sidebarFooter = (
+    <div className="px-3 py-3 border-t border-ink-100 dark:border-ink-800 space-y-0.5">
+      <button
+        onClick={toggle}
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800 transition-all"
+      >
+        {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+        <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
+      </button>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className="w-7 h-7 shrink-0 rounded-full bg-sage-500 text-white flex items-center justify-center text-xs font-semibold uppercase">
+          {username?.slice(0, 1) ?? '?'}
+        </div>
+        <span className="flex-1 text-sm font-medium truncate">{username}</span>
+        <button
+          onClick={signOut}
+          title="Sign out"
+          className="btn btn-ghost p-1.5 rounded-lg text-ink-400 hover:text-rose-500 transition-colors"
+        >
+          <LogOut size={16} />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar - desktop */}
@@ -77,39 +151,8 @@ function App() {
             <p className="text-xs text-ink-400 mt-0.5">Grow your vocabulary</p>
           </div>
         </div>
-
-        <nav className="flex-1 px-3 py-2 space-y-0.5">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.view);
-            return (
-              <button
-                key={item.label}
-                onClick={() => navigate(item.view)}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-                  active
-                    ? 'bg-sage-100 text-sage-700 dark:bg-sage-800/40 dark:text-sage-200'
-                    : 'text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800'
-                )}
-              >
-                <Icon size={18} />
-                <span className="flex-1 text-left">{item.label}</span>
-                <kbd className={cn('text-[10px] font-mono opacity-50', active && 'opacity-70')}>{item.shortcut}</kbd>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="px-3 py-3 border-t border-ink-100 dark:border-ink-800">
-          <button
-            onClick={toggle}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800 transition-all"
-          >
-            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-            <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
-          </button>
-        </div>
+        {navList}
+        {sidebarFooter}
       </aside>
 
       {/* Mobile sidebar */}
@@ -123,36 +166,8 @@ function App() {
               </div>
               <h1 className="font-serif text-lg font-medium">English Garden</h1>
             </div>
-            <nav className="flex-1 px-3 py-2 space-y-0.5">
-              {NAV.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.view);
-                return (
-                  <button
-                    key={item.label}
-                    onClick={() => navigate(item.view)}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-                      active
-                        ? 'bg-sage-100 text-sage-700 dark:bg-sage-800/40 dark:text-sage-200'
-                        : 'text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800'
-                    )}
-                  >
-                    <Icon size={18} />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-            <div className="px-3 py-3 border-t border-ink-100 dark:border-ink-800">
-              <button
-                onClick={toggle}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800"
-              >
-                {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
-              </button>
-            </div>
+            {navList}
+            {sidebarFooter}
           </aside>
         </div>
       )}
@@ -170,6 +185,17 @@ function App() {
           </button>
         </div>
 
+        {/* Sync failures used to be swallowed silently — surface them instead. */}
+        {store.error && (
+          <div className="mx-5 md:mx-8 mt-4 flex items-start gap-2 px-4 py-3 rounded-xl text-sm bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <span className="flex-1">{store.error}</span>
+            <button onClick={store.dismissError} className="btn btn-ghost p-0.5 rounded shrink-0">
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         <div className="animate-fade-in" key={JSON.stringify(view)}>
           {view.name === 'home' && <HomePage store={store} navigate={navigate} />}
           {view.name === 'words' && <WordsPage store={store} navigate={navigate} />}
@@ -179,6 +205,8 @@ function App() {
           {view.name === 'recall' && <RecallPage store={store} navigate={navigate} mode={view.mode} />}
           {view.name === 'stats' && <StatsPage store={store} />}
           {view.name === 'categories' && <CategoriesPage store={store} />}
+          {view.name === 'discover' && <DiscoverPage store={store} navigate={navigate} />}
+          {view.name === 'folder' && <SharedFolderPage store={store} navigate={navigate} folderId={view.id} />}
           {view.name === 'settings' && <SettingsPage store={store} />}
         </div>
       </main>
