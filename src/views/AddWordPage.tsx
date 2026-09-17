@@ -1,8 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import type { Store } from '@/lib/store';
 import type { View } from '@/lib/types';
-import { cn, readFileAsDataURL } from '@/lib/utils';
-import { Check, ImagePlus, Sparkles, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
+import { ImageField, useImageField } from '@/components/ImageField';
+import { Check, Sparkles } from 'lucide-react';
 
 interface Props {
   store: Store;
@@ -12,6 +14,7 @@ interface Props {
 const POS_OPTIONS = ['noun', 'verb', 'adjective', 'adverb', 'preposition', 'conjunction', 'pronoun', 'interjection', 'phrasal verb', 'idiom'];
 
 export function AddWordPage({ store, navigate }: Props) {
+  const { userId } = useAuth();
   const [word, setWord] = useState('');
   const [ipa, setIpa] = useState('');
   const [partOfSpeech, setPartOfSpeech] = useState('');
@@ -23,26 +26,21 @@ export function AddWordPage({ store, navigate }: Props) {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState(1);
   const [favorite, setFavorite] = useState(false);
-  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const image = useImageField(null);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  async function handleImage(file: File) {
-    if (!file.type.startsWith('image/')) return;
-    const dataUrl = await readFileAsDataURL(file);
-    setImageDataUrl(dataUrl);
-  }
 
   async function handleSave() {
-    if (!word.trim()) return;
+    if (!word.trim() || !userId || saving) return;
+    setSaving(true);
+    const imageUrl = await image.resolve(userId);
     await store.addWord({
       word: word.trim(),
       definition: definition.trim() || null,
       part_of_speech: partOfSpeech || null,
       ipa: ipa.trim() || null,
       example: example.trim() || null,
-      image_url: imageDataUrl,
+      image_url: imageUrl,
       association: association.trim() || null,
       story: story.trim() || null,
       category_id: categoryId,
@@ -51,6 +49,7 @@ export function AddWordPage({ store, navigate }: Props) {
       favorite,
       status: 'dont_know',
     });
+    setSaving(false);
     setSaved(true);
     setTimeout(() => navigate({ name: 'words' }), 600);
   }
@@ -130,47 +129,7 @@ export function AddWordPage({ store, navigate }: Props) {
         {/* Image upload */}
         <div>
           <label className="text-sm font-medium text-ink-600 dark:text-ink-300 mb-2 block">Image <span className="text-ink-400 font-normal">(optional)</span></label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImage(f);
-              e.target.value = '';
-            }}
-          />
-          {imageDataUrl ? (
-            <div className="relative group">
-              <img src={imageDataUrl} alt={word} className="w-full h-48 object-cover rounded-2xl" />
-              <button
-                onClick={() => setImageDataUrl(null)}
-                className="absolute top-3 right-3 btn btn-ghost p-2 rounded-full bg-black/40 text-white hover:bg-black/60"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const f = e.dataTransfer.files?.[0];
-                if (f) handleImage(f);
-              }}
-              className={cn(
-                'w-full h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-ink-400 transition-colors',
-                dragOver ? 'border-sage-400 text-sage-500 bg-sage-50 dark:bg-sage-900/20' : 'border-ink-200 dark:border-ink-700 hover:border-sage-400 hover:text-sage-500'
-              )}
-            >
-              <ImagePlus size={24} />
-              <span className="text-sm mt-2">Drag and drop an image, or click to upload</span>
-            </button>
-          )}
+          <ImageField field={image} alt={word || 'New word'} />
         </div>
 
         {/* Association */}
@@ -266,11 +225,13 @@ export function AddWordPage({ store, navigate }: Props) {
         {/* Save */}
         <button
           onClick={handleSave}
-          disabled={!word.trim() || saved}
+          disabled={!word.trim() || saving || saved}
           className={cn('btn w-full py-3 text-base', saved ? 'bg-emerald-500 text-white' : 'btn-primary')}
         >
           {saved ? (
             <><Check size={20} /> Saved!</>
+          ) : saving ? (
+            'Saving…'
           ) : (
             <><Sparkles size={18} /> Add to my garden</>
           )}

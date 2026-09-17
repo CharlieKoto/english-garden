@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import type { Store } from '@/lib/store';
-import type { View, ReviewRating, Word } from '@/lib/types';
+import type { View, ReviewRating, Word, RecallMode } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/Badges';
+import { WordImage } from '@/components/ImageField';
+import { blankedExample, resolvePromptMode, type PromptMode } from '@/lib/recall';
 import { ArrowLeft, Eye, Check, ChevronRight } from 'lucide-react';
 
 interface Props {
@@ -10,20 +12,47 @@ interface Props {
   navigate: (v: View) => void;
 }
 
+const MODES: RecallMode[] = ['random', 'image', 'definition', 'example', 'word', 'mistakes', 'difficult'];
+const MODE_LABELS: Record<RecallMode, string> = {
+  random: 'Random',
+  image: 'Image',
+  definition: 'Translation',
+  example: 'Example',
+  word: 'Word',
+  mistakes: 'Mistakes',
+  difficult: 'Difficulty',
+};
+
 export function ReviewPage({ store, navigate }: Props) {
   const today = new Date().toISOString().split('T')[0];
+  const [mode, setMode] = useState<RecallMode>('random');
   const [sessionWords, setSessionWords] = useState<Word[] | null>(null);
 
   useEffect(() => {
     if (!store.loading && sessionWords === null) {
-      setSessionWords(store.words.filter((w) => w.srs_due <= today && w.status !== 'know'));
+      // Mistakes / Difficulty pick their own working set, like Recall does;
+      // every other mode reviews whatever is due today, as before.
+      let base: Word[];
+      if (mode === 'mistakes') base = store.words.filter((w) => w.status === 'dont_know');
+      else if (mode === 'difficult') base = store.words.filter((w) => w.difficulty >= 4);
+      else base = store.words.filter((w) => w.srs_due <= today && w.status !== 'know');
+      setSessionWords(base);
     }
-  }, [store.loading, sessionWords, store.words, today]);
+  }, [store.loading, sessionWords, store.words, mode, today]);
 
   const [idx, setIdx] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(false);
   const [sessionStats, setSessionStats] = useState({ easy: 0, good: 0, hard: 0, forgot: 0 });
+
+  function changeMode(m: RecallMode) {
+    setMode(m);
+    setSessionWords(null);
+    setIdx(0);
+    setRevealed(false);
+    setDone(false);
+    setSessionStats({ easy: 0, good: 0, hard: 0, forgot: 0 });
+  }
 
   if (store.loading || sessionWords === null) {
     return (
@@ -32,6 +61,23 @@ export function ReviewPage({ store, navigate }: Props) {
       </div>
     );
   }
+
+  const modeSelector = (
+    <div className="mt-8">
+      <p className="text-xs uppercase tracking-wider text-ink-400 mb-3 text-center">Review mode</p>
+      <div className="flex flex-wrap gap-2 justify-center">
+        {MODES.map((m) => (
+          <button
+            key={m}
+            onClick={() => changeMode(m)}
+            className={cn('chip cursor-pointer transition-all', mode === m ? 'bg-sage-500 text-white' : 'bg-ink-100 dark:bg-ink-800 text-ink-600 dark:text-ink-300 hover:bg-ink-200 dark:hover:bg-ink-700')}
+          >
+            {MODE_LABELS[m]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   if (sessionWords.length === 0 || done) {
     return (
@@ -55,12 +101,16 @@ export function ReviewPage({ store, navigate }: Props) {
             Practice recall
           </button>
         </div>
+        {modeSelector}
       </div>
     );
   }
 
   const words = sessionWords;
   const word = words[idx];
+  // Stable per-card seed (not Math.random()) so the chosen style doesn't
+  // change out from under the user between the prompt and the reveal.
+  const promptMode = resolvePromptMode(word, mode, ((idx * 2654435761) % 1000) / 1000);
 
   async function handleRate(rating: ReviewRating) {
     await store.reviewWord(word.id, rating);
@@ -96,49 +146,7 @@ export function ReviewPage({ store, navigate }: Props) {
 
       {/* Card */}
       <div className="card p-8 md:p-10 mb-6 animate-fade-in" key={word.id}>
-        {/* Hidden word - show as image first if available */}
-        {word.image_url && !revealed && (
-          <div className="text-center mb-6">
-            <img src={word.image_url} alt="" className="w-full max-h-64 object-cover rounded-2xl mb-4" />
-            <p className="text-sm text-ink-400">What word does this image represent?</p>
-          </div>
-        )}
-
-        {!revealed && !word.image_url && (
-          <div className="text-center py-12">
-            <p className="text-sm text-ink-400 mb-4">Try to recall this word before revealing:</p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-ink-100 dark:bg-ink-800 text-ink-400">
-              <Eye size={16} />
-              <span className="text-sm">Hint: {word.part_of_speech || 'word'}</span>
-            </div>
-          </div>
-        )}
-
-        {revealed && (
-          <div className="text-center animate-slide-up">
-            <h1 className="font-serif text-4xl md:text-5xl font-medium tracking-tight mb-2">{word.word}</h1>
-            <div className="flex items-center justify-center gap-3 mb-4">
-              {word.ipa && <p className="text-ink-400 font-mono">{word.ipa}</p>}
-              {word.part_of_speech && <span className="text-ink-400 italic text-sm">{word.part_of_speech}</span>}
-            </div>
-            {word.image_url && <img src={word.image_url} alt={word.word} className="w-full max-h-48 object-cover rounded-2xl mb-4" />}
-            {word.definition && <p className="text-lg text-ink-700 dark:text-ink-200 mb-3">{word.definition}</p>}
-            {word.example && (
-              <p className="text-ink-500 dark:text-ink-400 italic border-l-2 border-sage-300 pl-4 text-left max-w-md mx-auto">
-                "{word.example}"
-              </p>
-            )}
-            {word.association && (
-              <div className="mt-4 p-3 rounded-xl bg-sage-50 dark:bg-sage-900/20 text-left max-w-md mx-auto">
-                <p className="text-xs text-sage-600 dark:text-sage-400 font-medium mb-1">Your association:</p>
-                <p className="text-sm text-ink-600 dark:text-ink-300">{word.association}</p>
-              </div>
-            )}
-            <div className="mt-4">
-              <StatusBadge status={word.status} />
-            </div>
-          </div>
-        )}
+        <ReviewPrompt word={word} mode={promptMode} revealed={revealed} />
       </div>
 
       {/* Actions */}
@@ -159,6 +167,80 @@ export function ReviewPage({ store, navigate }: Props) {
       <p className="text-center text-xs text-ink-400 mt-4">
         Rate how well you remembered — intervals adjust automatically
       </p>
+
+      {modeSelector}
+    </div>
+  );
+}
+
+/**
+ * The prompt shown before reveal, and the full answer shown after. `mode` is
+ * always one the word can actually support (resolvePromptMode guarantees
+ * that), so this never has to fall back mid-render or show an empty hint.
+ */
+function ReviewPrompt({ word, mode, revealed }: { word: Word; mode: PromptMode; revealed: boolean }) {
+  if (!revealed) {
+    if (mode === 'image') {
+      return (
+        <div className="text-center">
+          <WordImage src={word.image_url} alt="" className="aspect-[16/10] max-h-64 mb-4" />
+          <p className="text-sm text-ink-400">Which word does this image represent?</p>
+        </div>
+      );
+    }
+    if (mode === 'definition') {
+      return (
+        <div className="text-center py-8">
+          <p className="text-sm text-ink-400 mb-3">What is the English word for:</p>
+          <p className="text-xl font-serif text-ink-700 dark:text-ink-200">{word.definition}</p>
+        </div>
+      );
+    }
+    if (mode === 'example') {
+      return (
+        <div className="text-center py-8">
+          <p className="text-sm text-ink-400 mb-3">Which word is missing from this sentence?</p>
+          <p className="text-xl font-serif italic text-ink-700 dark:text-ink-200">
+            {blankedExample(word)}
+          </p>
+        </div>
+      );
+    }
+    // mode === 'word' — recall the meaning, not the word itself.
+    return (
+      <div className="text-center py-8">
+        <h1 className="font-serif text-4xl md:text-5xl font-medium tracking-tight mb-2">{word.word}</h1>
+        {word.part_of_speech && <p className="text-ink-400 italic text-sm mb-3">{word.part_of_speech}</p>}
+        <p className="text-sm text-ink-400 flex items-center justify-center gap-1.5">
+          Try to recall its meaning before revealing <ChevronRight size={14} />
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-center animate-slide-up">
+      <h1 className="font-serif text-4xl md:text-5xl font-medium tracking-tight mb-2">{word.word}</h1>
+      <div className="flex items-center justify-center gap-3 mb-4">
+        {word.ipa && <p className="text-ink-400 font-mono">{word.ipa}</p>}
+        {word.part_of_speech && <span className="text-ink-400 italic text-sm">{word.part_of_speech}</span>}
+      </div>
+      {word.image_url && <WordImage src={word.image_url} alt={word.word} className="aspect-[16/10] max-h-48 mb-4" />}
+      {word.definition && <p className="text-lg text-ink-700 dark:text-ink-200 mb-3">{word.definition}</p>}
+      {word.example && (
+        <p className="text-ink-500 dark:text-ink-400 italic border-l-2 border-sage-300 pl-4 text-left max-w-md mx-auto">
+          "{word.example}"
+        </p>
+      )}
+      {word.association && (
+        <div className="mt-4 p-3 rounded-xl bg-sage-50 dark:bg-sage-900/20 text-left max-w-md mx-auto">
+          <p className="text-xs text-sage-600 dark:text-sage-400 font-medium mb-1">Your association:</p>
+          <p className="text-sm text-ink-600 dark:text-ink-300">{word.association}</p>
+        </div>
+      )}
+      <div className="mt-4">
+        <StatusBadge status={word.status} />
+      </div>
     </div>
   );
 }
