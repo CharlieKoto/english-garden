@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Image, Eye, RotateCw, Check, X } from 'lucide-react';
 import type { Store } from '@/lib/store';
 import type { View, Word, RecallMode } from '@/lib/types';
+import { WordImage } from '@/components/ImageField';
+import { blankedExample, resolvePromptMode, type PromptMode } from '@/lib/recall';
 
 export function RecallPage({
   store,
@@ -75,7 +77,9 @@ export function RecallPage({
   }
 
   const word = sessionWords[idx];
-  const currentMode = mode === 'random' ? (['image', 'definition', 'example', 'word'] as RecallMode[])[idx % 4] : mode;
+  // Stable per-card: a fixed seed derived from position, not Math.random(), so
+  // the prompt style doesn't change out from under the user on re-render.
+  const currentMode = resolvePromptMode(word, mode, ((idx * 2654435761) % 1000) / 1000);
 
   const markKnown = () => {
     setKnown((p) => [...p, word.id]);
@@ -144,17 +148,14 @@ export function RecallPage({
   );
 }
 
-function RecallCard({ word, mode, revealed }: { word: Word; mode: RecallMode; revealed: boolean }) {
-  const escapedWord = word.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const blankedExample = word.example
-    ? word.example.replace(new RegExp(escapedWord, 'gi'), '_____')
-    : null;
+function RecallCard({ word, mode, revealed }: { word: Word; mode: PromptMode; revealed: boolean }) {
+  const blanked = blankedExample(word);
 
   if (mode === 'image') {
     return (
       <div className="text-center">
         {word.image_url ? (
-          <img src={word.image_url} alt="" className="w-full max-h-72 object-cover rounded-2xl mb-4" />
+          <WordImage src={word.image_url} alt="" className="aspect-[4/3] max-h-72 mb-4" />
         ) : (
           <div className="py-12 text-ink-400">
             <Image size={48} className="mx-auto mb-2 opacity-50" />
@@ -192,7 +193,7 @@ function RecallCard({ word, mode, revealed }: { word: Word; mode: RecallMode; re
       <div className="text-center">
         <p className="text-xs uppercase tracking-wider text-ink-400 mb-3">Fill in the blank</p>
         <p className="text-xl text-ink-700 dark:text-ink-200 font-serif italic">
-          {blankedExample || `"This sentence uses _____ in context."`}
+          {blanked || `"This sentence uses _____ in context."`}
         </p>
         {revealed && (
           <div className="animate-slide-up mt-4">
@@ -204,14 +205,13 @@ function RecallCard({ word, mode, revealed }: { word: Word; mode: RecallMode; re
     );
   }
 
-  // word, random, mistakes, difficult
+  // mode === 'word'
   return (
     <div className="text-center">
-      {word.image_url && <img src={word.image_url} alt="" className="w-full max-h-48 object-cover rounded-2xl mb-4" />}
-      {!revealed && mode === 'word' && (
+      {word.image_url && <WordImage src={word.image_url} alt="" className="aspect-[4/3] max-h-48 mb-4" />}
+      {!revealed && (
         <h2 className="font-serif text-3xl font-medium">{word.word}</h2>
       )}
-      {!revealed && mode !== 'word' && <p className="text-ink-400 text-sm">Try to recall this word</p>}
       {revealed && (
         <div className="animate-slide-up">
           <h2 className="font-serif text-3xl font-medium">{word.word}</h2>

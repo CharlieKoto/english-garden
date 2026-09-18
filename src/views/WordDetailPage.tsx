@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { Store } from '@/lib/store';
 import type { View } from '@/lib/types';
 import { StatusBadge } from '@/components/Badges';
+import { ImageField, WordImage, useImageField } from '@/components/ImageField';
+import { useAuth } from '@/lib/auth';
 import { cn, formatDate, relativeDays } from '@/lib/utils';
 import {
   ArrowLeft, Star, Trash2, Edit3, BookOpen, History, Save, X,
@@ -14,14 +16,16 @@ interface Props {
 }
 
 export function WordDetailPage({ store, navigate, wordId }: Props) {
+  const { userId } = useAuth();
   const word = store.words.find((w) => w.id === wordId);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editWord, setEditWord] = useState(word?.word || '');
   const [editIpa, setEditIpa] = useState(word?.ipa || '');
   const [editPos, setEditPos] = useState(word?.part_of_speech || '');
   const [editDefinition, setEditDefinition] = useState(word?.definition || '');
   const [editExample, setEditExample] = useState(word?.example || '');
-  const [editImage, setEditImage] = useState(word?.image_url || '');
+  const image = useImageField(word?.image_url ?? null);
   const [editAssociation, setEditAssociation] = useState(word?.association || '');
   const [editStory, setEditStory] = useState(word?.story || '');
   const [editNotes, setEditNotes] = useState(word?.notes || '');
@@ -40,14 +44,33 @@ export function WordDetailPage({ store, navigate, wordId }: Props) {
 
   const category = store.categories.find((c) => c.id === word.category_id);
 
+  function startEditing() {
+    setEditWord(word!.word);
+    setEditIpa(word!.ipa || '');
+    setEditPos(word!.part_of_speech || '');
+    setEditDefinition(word!.definition || '');
+    setEditExample(word!.example || '');
+    image.reset(word!.image_url ?? null);
+    setEditAssociation(word!.association || '');
+    setEditStory(word!.story || '');
+    setEditNotes(word!.notes || '');
+    setEditDifficulty(word!.difficulty || 1);
+    setEditCategoryId(word!.category_id || '');
+    setEditFavorite(word!.favorite || false);
+    setEditing(true);
+  }
+
   async function handleSave() {
+    if (!userId || saving) return;
+    setSaving(true);
+    const imageUrl = await image.resolve(userId);
     await store.updateWord(word!.id, {
       word: editWord.trim(),
       ipa: editIpa.trim() || null,
       part_of_speech: editPos || null,
       definition: editDefinition.trim() || null,
       example: editExample.trim() || null,
-      image_url: editImage.trim() || null,
+      image_url: imageUrl,
       association: editAssociation.trim() || null,
       story: editStory.trim() || null,
       notes: editNotes.trim() || null,
@@ -55,6 +78,7 @@ export function WordDetailPage({ store, navigate, wordId }: Props) {
       category_id: editCategoryId || null,
       favorite: editFavorite,
     });
+    setSaving(false);
     setEditing(false);
   }
 
@@ -100,7 +124,7 @@ export function WordDetailPage({ store, navigate, wordId }: Props) {
             <button onClick={toggleFavorite} className="btn btn-ghost p-2.5 rounded-full">
               <Star size={20} className={word.favorite ? 'fill-amber-400 text-amber-400' : ''} />
             </button>
-            <button onClick={() => setEditing(!editing)} className="btn btn-ghost p-2.5 rounded-full">
+            <button onClick={() => (editing ? setEditing(false) : startEditing())} className="btn btn-ghost p-2.5 rounded-full">
               <Edit3 size={18} />
             </button>
             <button onClick={handleDelete} className="btn btn-ghost p-2.5 rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20">
@@ -150,13 +174,13 @@ export function WordDetailPage({ store, navigate, wordId }: Props) {
         </div>
 
         {/* Image */}
-        {word.image_url && !editing && (
-          <img src={word.image_url} alt={word.word} className="w-full h-56 object-cover rounded-2xl mb-5" />
+        {!editing && word.image_url && (
+          <WordImage src={word.image_url} alt={word.word} className="aspect-[16/9] max-h-72 mb-5" />
         )}
         {editing && (
           <div className="mb-5">
-            <Label text="Image URL" />
-            <input value={editImage} onChange={(e) => setEditImage(e.target.value)} className="input" placeholder="Paste image URL" />
+            <Label text="Image" />
+            <ImageField field={image} alt={editWord || word.word} />
           </div>
         )}
 
@@ -227,10 +251,10 @@ export function WordDetailPage({ store, navigate, wordId }: Props) {
 
         {editing && (
           <div className="flex gap-2">
-            <button onClick={handleSave} className="btn btn-primary px-5 py-2.5">
-              <Save size={18} /> Save changes
+            <button onClick={handleSave} disabled={saving} className="btn btn-primary px-5 py-2.5 disabled:opacity-60">
+              <Save size={18} /> {saving ? 'Saving…' : 'Save changes'}
             </button>
-            <button onClick={() => setEditing(false)} className="btn btn-ghost px-5 py-2.5">
+            <button onClick={() => { image.reset(word.image_url ?? null); setEditing(false); }} className="btn btn-ghost px-5 py-2.5">
               <X size={18} /> Cancel
             </button>
           </div>

@@ -5,7 +5,8 @@ import type {
 } from './types';
 import { nextSrs, dueDate } from './srs';
 import { todayISO, uid } from './utils';
-import { supabase } from './supabase';
+import { supabase, WORD_IMAGES_BUCKET } from './supabase';
+import { deleteWordImage } from './images';
 import { useAuth } from './auth';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -107,6 +108,7 @@ export function useStore() {
   const updateWord = useCallback(async (id: string, data: Partial<Word>) => {
     const patch = { ...data };
     delete patch.id;
+    const before = words.find((w) => w.id === id);
 
     const { data: saved, error: err } = await supabase
       .from('words').update(patch).eq('id', id).select().single();
@@ -115,17 +117,28 @@ export function useStore() {
       setError(message(err));
       return;
     }
-    setWords((prev) => prev.map((w) => (w.id === id ? (saved as Word) : w)));
-  }, []);
+    const updated = saved as Word;
+    setWords((prev) => prev.map((w) => (w.id === id ? updated : w)));
+
+    // The image was replaced or removed — the old Storage object is no longer
+    // referenced by anything, so it's safe to clean up.
+    if (userId && 'image_url' in data && before?.image_url && before.image_url !== updated.image_url) {
+      await deleteWordImage(before.image_url, userId);
+    }
+  }, [words, userId]);
 
   const deleteWord = useCallback(async (id: string) => {
+    const before = words.find((w) => w.id === id);
     const { error: err } = await supabase.from('words').delete().eq('id', id);
     if (err) {
       setError(message(err));
       return;
     }
     setWords((prev) => prev.filter((w) => w.id !== id));
-  }, []);
+    if (userId && before?.image_url) {
+      await deleteWordImage(before.image_url, userId);
+    }
+  }, [words, userId]);
 
   const reviewWord = useCallback(async (id: string, rating: ReviewRating) => {
     if (!userId) return;
@@ -311,8 +324,32 @@ export function useStore() {
 
   // --------------------------------------------------------- bulk / import
 
-  const importWords = useCallback(async (newWords: Word[]) => {
-    if (!userId) return;
+  const importWords = useCallback(async (
+    newWords: Word[],
+    opts?: { dedupeByWord?: boolean }
+  ): Promise<{ imported: number; skipped: number }> => {
+    if (!userId) return { imported: 0, skipped: 0 };
+
+    // Optional safe duplicate check: skip rows whose word already exists for
+    // this user (case-insensitive), and collapse duplicates within the import
+    // itself. Off by default so JSON re-imports (which carry real ids and are
+    // meant to update existing rows) keep working exactly as before.
+    let candidates = newWords;
+    let skipped = 0;
+    if (opts?.dedupeByWord) {
+      const existing = new Set(words.map((w) => w.word.trim().toLowerCase()));
+      const seenHere = new Set<string>();
+      candidates = newWords.filter((w) => {
+        const key = w.word.trim().toLowerCase();
+        if (!key || existing.has(key) || seenHere.has(key)) {
+          skipped++;
+          return false;
+        }
+        seenHere.add(key);
+        return true;
+      });
+    }
+
     // An imported file can carry a category_id pointing at someone else's folder.
     // Keeping it would file the word into that folder and expose it to everyone
     // the folder is shared with, so only ids the user actually owns survive.
@@ -320,7 +357,7 @@ export function useStore() {
     // and those wouldn't be in component state yet.
     const { data: owned } = await supabase.from('categories').select('id').eq('user_id', userId);
     const mine = new Set((owned ?? []).map((c) => c.id as string));
-    const rows = newWords.map((w) => ({
+    const rows = candidates.map((w) => ({
       ...w,
       id: safeId(w.id),
       category_id: w.category_id && mine.has(w.category_id) ? w.category_id : null,
@@ -334,7 +371,8 @@ export function useStore() {
       }
     }
     await loadAll();
-  }, [userId, loadAll]);
+    return { imported: rows.length, skipped };
+  }, [userId, words, loadAll]);
 
   const importCategories = useCallback(async (newCats: Category[]) => {
     if (!userId) return;
@@ -361,6 +399,11 @@ export function useStore() {
         setError(message(err));
         break;
       }
+    }
+    // Best-effort: also clear this user's uploaded images so nothing orphans in Storage.
+    const { data: files } = await supabase.storage.from(WORD_IMAGES_BUCKET).list(userId);
+    if (files && files.length > 0) {
+      await supabase.storage.from(WORD_IMAGES_BUCKET).remove(files.map((f) => `${userId}/${f.name}`));
     }
     await loadAll();
   }, [userId, loadAll]);
